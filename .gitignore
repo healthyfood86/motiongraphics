@@ -1,0 +1,6 @@
+node_modules/
+out/
+.remotion/
+*.log
+assets/raw/
+public/audio/*.m4a
