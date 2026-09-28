@@ -18,7 +18,10 @@ const HouseCanvas: React.FC<{ frame: number; startFrame: number; fps: number }> 
       easing: EASE_IN_OUT,
     })
   );
-  const wipePct = 8 + wipe * 84;
+  // wipePct is the clip-inset from the left, so it must SHRINK over time
+  // (92 -> 8) for the "after" region [wipePct, 100] to grow and sweep the
+  // renovated house into view as the demo plays.
+  const wipePct = 92 - wipe * 84;
 
   const windowPop = (i: number) => popIn(frame, fps, startFrame + fps * 0.5 + i * 3, { damping: 12, stiffness: 200 });
 
@@ -232,10 +235,10 @@ export const ProductShowcase: React.FC<{ startFrame: number }> = ({ startFrame }
               <HouseCanvas frame={frame} startFrame={startFrame + Math.round(fps * 0.35)} fps={fps} />
             </div>
             {/* material swatches floating over the canvas */}
-            <SwatchChip color="#8B93A0" x={26} y={26} frame={frame} delay={startFrame + fps * 1.1} fps={fps} />
-            <SwatchChip color={COLORS.warm} x={80} y={26} frame={frame} delay={startFrame + fps * 1.2} fps={fps} selected />
-            <SwatchChip color="#D9C79E" x={134} y={26} frame={frame} delay={startFrame + fps * 1.3} fps={fps} />
-            <SwatchChip color="#7A4A2E" x={188} y={26} frame={frame} delay={startFrame + fps * 1.4} fps={fps} />
+            <SwatchChip color="#8B93A0" x={26} y={62} frame={frame} delay={startFrame + fps * 1.1} fps={fps} />
+            <SwatchChip color={COLORS.warm} x={80} y={62} frame={frame} delay={startFrame + fps * 1.2} fps={fps} selected />
+            <SwatchChip color="#D9C79E" x={134} y={62} frame={frame} delay={startFrame + fps * 1.3} fps={fps} />
+            <SwatchChip color="#7A4A2E" x={188} y={62} frame={frame} delay={startFrame + fps * 1.4} fps={fps} />
           </div>
         </div>
       </div>

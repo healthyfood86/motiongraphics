@@ -136,9 +136,28 @@ export const Showreel: React.FC = () => {
         <ScreenFlash t={t} hitT={cues.climaxHit} color="#FFF3E9" peak={0.8} tau={0.04} />
 
         {/* kinetic tagline */}
-        {frame >= fTitle && frame < fShowcase + fps * 0.4 && (
-          <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 40 }}>
-            <div style={{ transform: `translateY(${interpolate(frame, [fShowcase, fShowcase + fps * 0.5], [0, -260], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing: EASE_OUT_EXPO })}px)` }}>
+        {frame >= fTitle && frame < fShowcase + fps * 0.25 && (
+          <AbsoluteFill
+            style={{
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingTop: 40,
+              opacity: interpolate(frame, [fShowcase, fShowcase + fps * 0.22], [1, 0], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+                easing: EASE_OUT_EXPO,
+              }),
+            }}
+          >
+            <div
+              style={{
+                transform: `translateY(${interpolate(frame, [fShowcase, fShowcase + fps * 0.4], [0, -80], {
+                  extrapolateLeft: 'clamp',
+                  extrapolateRight: 'clamp',
+                  easing: EASE_OUT_EXPO,
+                })}px) scale(${interpolate(frame, [fShowcase, fShowcase + fps * 0.3], [1, 0.9], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })})`,
+              }}
+            >
               <KineticLine frame={frame} startFrame={fTitle} text={BRAND.tagline} fontSize={78} />
               <div style={{ height: 14 }} />
               <KineticLine frame={frame} startFrame={fTitle + 10} text={BRAND.taglineLine2} fontSize={78} gradient />
