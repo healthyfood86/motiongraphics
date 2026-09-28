@@ -12,8 +12,9 @@ export const Photo: React.FC<{
   dur: number;
   kb?: KenBurns;
   bump?: number;
+  pos?: string;
   style?: React.CSSProperties;
-}> = ({ src, t, t0, dur, kb = {} as KenBurns, bump = 0, style }) => {
+}> = ({ src, t, t0, dur, kb = {} as KenBurns, bump = 0, pos = '50% 50%', style }) => {
   const p = interpolate(t, [t0, t0 + dur], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -31,6 +32,7 @@ export const Photo: React.FC<{
           width: '100%',
           height: '100%',
           objectFit: 'cover',
+          objectPosition: pos,
           transform: `translate(${x}%, ${y}%) scale(${s})`,
         }}
       />

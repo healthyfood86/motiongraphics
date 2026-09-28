@@ -5,31 +5,38 @@ import { BRAND, COLORS, FONT_STACK, GRADIENT_TEXT, PHOTOS } from '../theme';
 import { Photo } from '../components/Photo';
 import { BrandLockup } from '../components/BrandLockup';
 import { ParticleField } from '../components/ParticleField';
-import { PhoneIcon, MailIcon, GlobeIcon, ArrowIcon } from '../icons/Icons';
+import { PhoneIcon, GlobeIcon, ArrowIcon } from '../icons/Icons';
 import beatmap from '../beatmap.json';
 
 const C = beatmap.cues;
 const B = beatmap.beatSec;
 const CLICK_T = C.ctaPulses[2];
 
-const Contact: React.FC<{ t: number; at: number; fps: number; Icon: typeof PhoneIcon; text: string }> = ({ t, at, fps, Icon, text }) => {
+const PhoneCard: React.FC<{ t: number; at: number; fps: number; country: string; phone: string; name: string }> = ({ t, at, fps, country, phone, name }) => {
   const s = springAt(t, at, fps, { damping: 13, stiffness: 200 });
   return (
     <div
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 16,
-        padding: '16px 28px',
-        borderRadius: 999,
-        background: 'rgba(27,24,20,0.7)',
+        gap: 22,
+        padding: '18px 34px 18px 20px',
+        borderRadius: 24,
+        background: 'rgba(27,24,20,0.78)',
         border: `1px solid ${COLORS.line}`,
+        boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
         opacity: Math.min(1, s * 1.4),
-        transform: `translateY(${(1 - s) * 50}px) scale(${interpolate(s, [0, 1], [0.8, 1])})`,
+        transform: `translateY(${(1 - s) * 60}px) scale(${interpolate(s, [0, 1], [0.8, 1])})`,
       }}
     >
-      <Icon size={30} color={COLORS.primary} draw={prog(t, at, at + 0.5, EASE_OUT_EXPO)} />
-      <span style={{ fontFamily: FONT_STACK, fontWeight: 700, fontSize: 30, color: COLORS.white }}>{text}</span>
+      <div style={{ width: 70, height: 70, borderRadius: 35, background: 'rgba(217,164,91,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <PhoneIcon size={34} color={COLORS.primary} draw={prog(t, at, at + 0.5, EASE_OUT_EXPO)} />
+      </div>
+      <div>
+        <div style={{ fontFamily: FONT_STACK, fontWeight: 700, fontSize: 18, letterSpacing: 4, textTransform: 'uppercase', color: COLORS.primary }}>{country}</div>
+        <div style={{ fontFamily: FONT_STACK, fontWeight: 800, fontSize: 40, color: COLORS.white, lineHeight: 1.15 }}>{phone}</div>
+        <div style={{ fontFamily: FONT_STACK, fontWeight: 600, fontSize: 23, color: COLORS.dim }}>{name}</div>
+      </div>
     </div>
   );
 };
@@ -39,7 +46,7 @@ const Cursor: React.FC<{ t: number }> = ({ t }) => {
   if (t < a) return null;
   const move = prog(t, a, CLICK_T - 0.04, EASE_IN_OUT);
   const x = interpolate(move, [0, 1], [1560, 1090]);
-  const y = interpolate(move, [0, 1], [1040, 752]);
+  const y = interpolate(move, [0, 1], [1040, 672]);
   const press = Math.exp(-Math.max(0, t - CLICK_T) / 0.08) * (t >= CLICK_T ? 1 : 0);
   const fadeOut = prog(t, CLICK_T + 0.6, CLICK_T + 0.9);
   return (
@@ -84,12 +91,12 @@ export const CTA: React.FC<{ t: number; fps: number }> = ({ t, fps }) => {
       <AbsoluteFill style={{ background: 'radial-gradient(55% 55% at 50% 50%, rgba(217,164,91,0.16), rgba(0,0,0,0) 70%)' }} />
       <ParticleField mode="ambient" opacity={2.5} />
 
-      <AbsoluteFill style={{ alignItems: 'center', paddingTop: 140, transform: `scale(${1 + resolveBump})` }}>
+      <AbsoluteFill style={{ alignItems: 'center', paddingTop: 96, transform: `scale(${1 + resolveBump})` }}>
         <BrandLockup t={t} t0={t0 + 0.12} fps={fps} size={40} descriptor={false} />
 
         <div
           style={{
-            marginTop: 90,
+            marginTop: 56,
             fontFamily: FONT_STACK,
             fontWeight: 700,
             fontSize: 58,
@@ -133,7 +140,7 @@ export const CTA: React.FC<{ t: number; fps: number }> = ({ t, fps }) => {
           {BRAND.cta.tail}
         </div>
 
-        <div style={{ position: 'relative', marginTop: 50 }}>
+        <div style={{ position: 'relative', marginTop: 40 }}>
           <div
             style={{
               position: 'absolute',
@@ -181,10 +188,26 @@ export const CTA: React.FC<{ t: number; fps: number }> = ({ t, fps }) => {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 26, marginTop: 70 }}>
-          <Contact t={t} at={C.ctaPulses[1]} fps={fps} Icon={PhoneIcon} text={BRAND.phone} />
-          <Contact t={t} at={C.ctaPulses[1] + B} fps={fps} Icon={MailIcon} text={BRAND.email} />
-          <Contact t={t} at={C.ctaPulses[1] + B * 2} fps={fps} Icon={GlobeIcon} text={BRAND.domain} />
+        <div style={{ display: 'flex', gap: 30, marginTop: 44 }}>
+          {BRAND.contacts.map((c, i) => (
+            <PhoneCard key={c.phone} t={t} at={C.ctaPulses[1] + i * B} fps={fps} country={c.country} phone={c.phone} name={c.name} />
+          ))}
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginTop: 26,
+            fontFamily: FONT_STACK,
+            fontWeight: 700,
+            fontSize: 26,
+            color: COLORS.accent,
+            opacity: springAt(t, C.ctaPulses[1] + B * 2, fps, { damping: 16, stiffness: 170 }),
+          }}
+        >
+          <GlobeIcon size={26} color={COLORS.primary} draw={prog(t, C.ctaPulses[1] + B * 2, C.ctaPulses[1] + B * 3, EASE_OUT_EXPO)} />
+          {BRAND.domain}
         </div>
       </AbsoluteFill>
 

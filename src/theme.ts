@@ -9,8 +9,11 @@ export const BRAND = {
   nameB: 'Design',
   descriptor: "Singapore's renovation contractor",
   domain: 'renoworks.sg',
-  phone: '+65 8850 2000',
-  email: 'hello@renoworks.sg',
+  contacts: [
+    { country: 'Singapore', phone: '+65 8060 8448', name: 'Mr. Raymond' },
+    { country: 'Malaysia', phone: '+60 17 5858 988', name: 'Mr. Jazz' },
+  ],
+  specialtiesTitle: 'Our renovation specialties',
   statement: 'We make futuristic homes practical and within budget.',
   regions: ['Singapore', 'Johor Bahru'],
   hook: ['Futuristic.', 'Practical.', 'Within budget.'],
@@ -28,11 +31,17 @@ export const PHOTOS = {
   hero: 'photos/home-3.jpg',
   hookSlivers: ['photos/detail-2.jpg', 'photos/detail-1.jpg'],
   portfolio: [
-    { src: 'photos/home-1.jpg', label: 'Living room', sub: 'Curved feature wall · pendant lights' },
-    { src: 'photos/home-2.jpg', label: 'Condo living', sub: 'Floating TV wall · cove lighting' },
+    { src: 'photos/home-1.jpg', label: 'Scandinavian', sub: 'Curved feature wall · pendant lights' },
+    { src: 'photos/home-2.jpg', label: 'Japandi', sub: 'Floating TV wall · cove lighting' },
     { src: 'photos/home-3.jpg', label: 'Loft home', sub: 'Floating stairs · open kitchen' },
   ],
-  triptych: ['photos/home-1.jpg', 'photos/home-2.jpg', 'photos/home-3.jpg'],
+  // one tall panel per specialty; `pos` picks which part of the photo the portrait crop shows
+  specialties: [
+    { src: 'photos/home-1.jpg', pos: '72% 50%', label: 'Scandinavian' },
+    { src: 'photos/home-2.jpg', pos: '44% 50%', label: 'Japandi' },
+    { src: 'photos/home-3.jpg', pos: '52% 30%', label: 'Muji-inspired' },
+    { src: 'photos/home-3.jpg', pos: '92% 60%', label: 'Loft home' },
+  ],
   pillars: ['photos/detail-4.jpg', 'photos/detail-2.jpg', 'photos/detail-3.jpg'],
   regionsBg: 'photos/home-1.jpg',
   montage: [

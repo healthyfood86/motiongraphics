@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate } from 'remotion';
+import { AbsoluteFill } from 'remotion';
 import { springAt, prog, kickPulse, EASE_OUT_EXPO, EASE_IN_OUT } from '../hooks';
 import { BRAND, COLORS, FONT_STACK, SERIF, PHOTOS } from '../theme';
 import { Photo } from '../components/Photo';
@@ -74,52 +74,67 @@ const KB = [
   { s0: 1.02, s1: 1.1, x0: -1.5, x1: 1 },
 ];
 
-const Triptych: React.FC<{ t: number; fps: number; bump: number }> = ({ t, fps, bump }) => {
+// Four tall panels, one specialty per beat of the bar, dropping into outlined slots.
+const Specialties: React.FC<{ t: number; fps: number; bump: number }> = ({ t, fps, bump }) => {
   const t0 = C.portfolio[3];
   const exit = prog(t, C.pillars - 0.35, C.pillars + 0.15, EASE_IN_OUT);
   const gap = 18;
+  const top = 150;
+  const n = PHOTOS.specialties.length;
+  const w = (1920 - gap * (n + 1)) / n;
+  const title = springAt(t, t0, fps, { damping: 16, stiffness: 180 });
   return (
     <AbsoluteFill>
-      <AbsoluteFill style={{ background: COLORS.bgDeep, opacity: prog(t, t0 + 0.05, t0 + 0.4) * (1 - exit) }} />
-      {PHOTOS.triptych.map((src, i) => {
-        const s = springAt(t, t0 + i * 0.07, fps, { damping: 17, stiffness: 150 });
+      <AbsoluteFill style={{ background: COLORS.bgDeep, opacity: prog(t, t0, t0 + 0.25) * (1 - exit) }} />
+      <div
+        style={{
+          position: 'absolute',
+          top: 62,
+          width: '100%',
+          textAlign: 'center',
+          fontFamily: FONT_STACK,
+          fontWeight: 700,
+          fontSize: 34,
+          letterSpacing: 12,
+          textTransform: 'uppercase',
+          color: COLORS.primary,
+          opacity: title * (1 - exit),
+          transform: `translateY(${(1 - title) * -30}px)`,
+        }}
+      >
+        {BRAND.specialtiesTitle}
+      </div>
+      {PHOTOS.specialties.map((sp, i) => {
+        const at = t0 + i * B * 0.5; // on the 8th-note hats, so all four hold together before the exit
+        const s = springAt(t, at, fps, { damping: 15, stiffness: 190, mass: 0.7 });
+        const lab = springAt(t, at + 0.07, fps, { damping: 13, stiffness: 210 });
         const dir = i % 2 ? -1 : 1;
-        const word = springAt(t, t0 + B + i * B * 0.5, fps, { damping: 13, stiffness: 200 });
-        const w = (1920 - gap * 4) / 3;
+        const slot = prog(t, t0 + i * 0.04, t0 + 0.3 + i * 0.04, EASE_OUT_EXPO);
+        const box: React.CSSProperties = { position: 'absolute', top, bottom: gap, left: gap + i * (w + gap), width: w, borderRadius: 18 };
         return (
-          <div
-            key={i}
-            style={{
-              position: 'absolute',
-              top: gap,
-              bottom: gap,
-              left: gap + i * (w + gap),
-              width: w,
-              borderRadius: 18,
-              overflow: 'hidden',
-              transform: `translateY(${(1 - s) * dir * 110 + exit * -dir * 120}%)`,
-            }}
-          >
-            <Photo src={src} t={t} t0={t0} dur={BAR + 0.5} kb={{ s0: 1.2, s1: 1.1, x0: dir * 2, x1: 0 }} bump={bump} />
-            <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0) 50%, rgba(10,9,8,0.75) 100%)' }} />
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                bottom: 56,
-                textAlign: 'center',
-                fontFamily: FONT_STACK,
-                fontWeight: 800,
-                fontSize: 50,
-                color: COLORS.white,
-                opacity: word,
-                transform: `translateY(${(1 - word) * 40}px) scale(${interpolate(word, [0, 1], [0.8, 1])})`,
-              }}
-            >
-              {BRAND.hook[i].replace('.', '')}
-            </div>
-          </div>
+          <React.Fragment key={sp.label}>
+            <div style={{ ...box, border: `1px solid ${COLORS.line}`, opacity: slot * (1 - exit), transform: `scaleY(${slot})` }} />
+            {t >= at && (
+              <div style={{ ...box, overflow: 'hidden', transform: `translateY(${(1 - s) * dir * 110 + exit * -dir * 130}%)` }}>
+                <Photo src={sp.src} pos={sp.pos} t={t} t0={at} dur={BAR} kb={{ s0: 1.18, s1: 1.06, y0: dir * 2, y1: 0 }} bump={bump} />
+                <AbsoluteFill style={{ background: 'linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(10,9,8,0.8) 100%)' }} />
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 34,
+                    right: 20,
+                    bottom: 44,
+                    opacity: lab,
+                    transform: `translateY(${(1 - lab) * 50}px)`,
+                  }}
+                >
+                  <div style={{ fontFamily: SERIF, fontStyle: 'italic', fontSize: 40, color: COLORS.primary, lineHeight: 1 }}>0{i + 1}</div>
+                  <div style={{ height: 2, width: 60 * lab, background: COLORS.primary, margin: '14px 0 16px' }} />
+                  <div style={{ fontFamily: FONT_STACK, fontWeight: 800, fontSize: 46, color: COLORS.white, letterSpacing: -0.5, whiteSpace: 'nowrap' }}>{sp.label}</div>
+                </div>
+              </div>
+            )}
+          </React.Fragment>
         );
       })}
     </AbsoluteFill>
@@ -143,7 +158,7 @@ export const Portfolio: React.FC<{ t: number; fps: number }> = ({ t, fps }) => {
           </AbsoluteFill>
         );
       })}
-      {t >= C.portfolio[3] && <Triptych t={t} fps={fps} bump={bump} />}
+      {t >= C.portfolio[3] && <Specialties t={t} fps={fps} bump={bump} />}
     </AbsoluteFill>
   );
 };
