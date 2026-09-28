@@ -3,7 +3,6 @@ import { AbsoluteFill } from 'remotion';
 import { useTime, clamp01 } from '../hooks';
 import { seededArray } from '../rng';
 import { COLORS } from '../theme';
-import cues from '../beatmap.json';
 
 const W = 1920;
 const H = 1080;
@@ -27,7 +26,11 @@ function lerpColor(a: string, b: string, m: number) {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-export const ParticleField: React.FC<{ mode: 'intro' | 'ambient' | 'buildup' }> = ({ mode }) => {
+export const ParticleField: React.FC<{ mode: 'intro' | 'ambient' | 'buildup'; impactT?: number; opacity?: number }> = ({
+  mode,
+  impactT = 1.875,
+  opacity = 1,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { t } = useTime();
 
@@ -38,7 +41,7 @@ export const ParticleField: React.FC<{ mode: 'intro' | 'ambient' | 'buildup' }> 
     if (!ctx) return;
     ctx.clearRect(0, 0, W, H);
 
-    const impact = cues.cues.logoImpact;
+    const impact = impactT;
     const cx = W / 2;
     const cy = H * 0.46;
     const minDim = Math.min(W, H);
@@ -77,7 +80,7 @@ export const ParticleField: React.FC<{ mode: 'intro' | 'ambient' | 'buildup' }> 
 
       const color = lerpColor(COLORS.primary, COLORS.accent, p.hueMix);
       ctx.beginPath();
-      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha * opacity));
       ctx.fillStyle = color;
       ctx.shadowColor = color;
       ctx.shadowBlur = size * 3;

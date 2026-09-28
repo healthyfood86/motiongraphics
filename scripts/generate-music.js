@@ -1,453 +1,349 @@
-// Procedural score for the Renoworks showreel.
-// 128 BPM -> beat = 60/128 = 0.46875s. 32 beats = exactly 15.000s (8 bars of 4/4).
-// Fully hand-synthesized (no samples) so every hit lands on an exact, known timestamp
-// that the Remotion timeline is choreographed against.
+// Procedural score for the 30s Eden & Design ad.
+// 128 BPM -> beat = 0.46875s. 64 beats = exactly 30.000s (16 bars of 4/4).
+// Hand-synthesized so every hit lands on a known timestamp; the beat map it
+// writes (src/beatmap.json) is what the Remotion timeline is cut against.
 
 const fs = require('fs');
+const path = require('path');
 
 const SR = 44100;
-const DURATION = 15.0;
-const N = Math.round(SR * DURATION);
 const BPM = 128;
-const BEAT = 60 / BPM; // 0.46875
+const BEAT = 60 / BPM;
+const BARS = 16;
+const DURATION = BARS * 4 * BEAT; // 30.0
+const N = Math.round(SR * DURATION);
 
 const L = new Float64Array(N);
 const R = new Float64Array(N);
 
-function t2i(t) { return Math.max(0, Math.round(t * SR)); }
-function beat(n) { return n * BEAT; }
+let seed = 1337;
+function rand() {
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
 
-function addMono(startTime, samples, pan = 0.0, gain = 1.0) {
+const beat = (n) => n * BEAT;
+const bar = (n) => n * 4 * BEAT;
+const t2i = (t) => Math.max(0, Math.round(t * SR));
+
+function add(startTime, samples, pan = 0, gain = 1) {
   const start = t2i(startTime);
   const lg = gain * (1 - Math.max(0, pan));
   const rg = gain * (1 + Math.min(0, pan));
   for (let i = 0; i < samples.length; i++) {
     const idx = start + i;
+    if (idx < 0) continue;
     if (idx >= N) break;
     L[idx] += samples[i] * lg;
     R[idx] += samples[i] * rg;
   }
 }
 
-function addStereo(startTime, sampL, sampR, gain = 1.0) {
-  const start = t2i(startTime);
-  for (let i = 0; i < sampL.length; i++) {
-    const idx = start + i;
-    if (idx >= N) break;
-    L[idx] += sampL[i] * gain;
-    R[idx] += sampR[i] * gain;
-  }
-}
-
-// ---- primitives ----
-function noiseBuf(dur) {
+// ---------- primitives ----------
+function noise(dur) {
   const n = Math.round(dur * SR);
   const b = new Float64Array(n);
-  for (let i = 0; i < n; i++) b[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < n; i++) b[i] = rand() * 2 - 1;
   return b;
 }
 
-// one-pole lowpass
-function lowpass(buf, cutoff) {
-  const rc = 1 / (2 * Math.PI * cutoff);
-  const a = 1 / SR / (rc + 1 / SR);
+// one-pole lowpass whose cutoff may vary per sample (no state resets -> no clicks)
+function lowpassVar(buf, cutoffAt) {
   const out = new Float64Array(buf.length);
   let y = 0;
   for (let i = 0; i < buf.length; i++) {
-    y = y + a * (buf[i] - y);
+    const fc = typeof cutoffAt === 'function' ? cutoffAt(i / buf.length) : cutoffAt;
+    const a = 1 - Math.exp((-2 * Math.PI * fc) / SR);
+    y += a * (buf[i] - y);
     out[i] = y;
   }
   return out;
 }
-// one-pole highpass (complement)
-function highpass(buf, cutoff) {
-  const lp = lowpass(buf, cutoff);
+const lowpass = (buf, fc) => lowpassVar(buf, fc);
+function highpass(buf, fc) {
+  const lp = lowpass(buf, fc);
   const out = new Float64Array(buf.length);
   for (let i = 0; i < buf.length; i++) out[i] = buf[i] - lp[i];
   return out;
 }
-function bandpass(buf, lo, hi) {
-  return lowpass(highpass(buf, lo), hi);
-}
+const bandpass = (buf, lo, hi) => lowpass(highpass(buf, lo), hi);
 
-function sweepFreqOsc(dur, f0, f1, shape = 'sine', curve = 'exp') {
+function osc(freq, dur, shape = 'sine', detuneCents = 0) {
   const n = Math.round(dur * SR);
   const out = new Float64Array(n);
-  let phase = 0;
+  const f = freq * Math.pow(2, detuneCents / 1200);
+  const phase0 = rand();
   for (let i = 0; i < n; i++) {
-    const x = i / n;
-    const k = curve === 'exp' ? Math.pow(x, 0.35) : x;
-    const f = f0 + (f1 - f0) * k;
-    phase += (2 * Math.PI * f) / SR;
-    let s;
-    if (shape === 'sine') s = Math.sin(phase);
-    else if (shape === 'saw') s = 2 * (((phase / (2 * Math.PI)) % 1)) - 1;
-    else s = Math.sign(Math.sin(phase));
-    out[i] = s;
-  }
-  return out;
-}
-
-function osc(freq, dur, shape = 'sine', detune = 0) {
-  const n = Math.round(dur * SR);
-  const out = new Float64Array(n);
-  const f = freq * Math.pow(2, detune / 1200);
-  for (let i = 0; i < n; i++) {
-    const ph = (f * i) / SR;
+    const ph = phase0 + (f * i) / SR;
     if (shape === 'sine') out[i] = Math.sin(2 * Math.PI * ph);
     else if (shape === 'saw') out[i] = 2 * (ph % 1) - 1;
-    else if (shape === 'square') out[i] = Math.sign(Math.sin(2 * Math.PI * ph));
     else if (shape === 'tri') out[i] = 2 * Math.abs(2 * (ph % 1) - 1) - 1;
   }
   return out;
 }
 
-function envExpDecay(buf, tau, holdSamples = 0) {
-  const out = new Float64Array(buf.length);
-  for (let i = 0; i < buf.length; i++) {
-    const t = Math.max(0, i - holdSamples) / SR;
-    out[i] = buf[i] * Math.exp(-t / tau);
-  }
-  return out;
-}
-
-function envLinRamp(buf, attackSamples) {
-  const out = new Float64Array(buf.length);
-  for (let i = 0; i < buf.length; i++) {
-    const a = attackSamples > 0 ? Math.min(1, i / attackSamples) : 1;
-    out[i] = buf[i] * a;
-  }
-  return out;
-}
-
-function mulBuf(a, b) {
-  const n = Math.min(a.length, b.length);
+function sweep(dur, f0, f1, shape = 'sine', k = 0.35) {
+  const n = Math.round(dur * SR);
   const out = new Float64Array(n);
-  for (let i = 0; i < n; i++) out[i] = a[i] * b[i];
-  return out;
-}
-
-function scale(buf, g) {
-  const out = new Float64Array(buf.length);
-  for (let i = 0; i < buf.length; i++) out[i] = buf[i] * g;
-  return out;
-}
-
-function addArr(a, b) {
-  const n = Math.max(a.length, b.length);
-  const out = new Float64Array(n);
-  for (let i = 0; i < a.length; i++) out[i] += a[i];
-  for (let i = 0; i < b.length; i++) out[i] += b[i];
-  return out;
-}
-
-// ---- drum voices ----
-function kick(gainMul = 1) {
-  const dur = 0.28;
-  const body = sweepFreqOsc(dur, 165, 48, 'sine', 'exp');
-  const bodyEnv = envExpDecay(body, 0.11);
-  const click = highpass(noiseBuf(0.012), 3000);
-  const clickEnv = envExpDecay(click, 0.006);
-  const clickPadded = new Float64Array(bodyEnv.length);
-  for (let i = 0; i < clickEnv.length; i++) clickPadded[i] = clickEnv[i];
-  const out = addArr(scale(bodyEnv, 1.0), scale(clickPadded, 0.6));
-  return scale(out, 0.95 * gainMul);
-}
-
-function hat(open = false) {
-  const dur = open ? 0.22 : 0.045;
-  let n = highpass(noiseBuf(dur), 7500);
-  n = lowpass(n, 14000);
-  const env = envExpDecay(n, open ? 0.09 : 0.018);
-  return scale(env, open ? 0.22 : 0.25);
-}
-
-function clap() {
-  const dur = 0.18;
-  const n = bandpass(noiseBuf(dur), 900, 3200);
-  const env = envExpDecay(n, 0.05);
-  const tone = osc(190, dur, 'sine');
-  const toneEnv = envExpDecay(tone, 0.035);
-  return scale(addArr(scale(env, 1.0), scale(toneEnv, 0.5)), 0.5);
-}
-
-function subBass(freq, dur, duckTimes) {
-  const o = osc(freq, dur, 'sine');
-  const o2 = osc(freq * 2, dur, 'sine');
-  let mix = addArr(scale(o, 0.85), scale(o2, 0.15));
-  mix = envLinRamp(mix, Math.round(0.008 * SR));
-  const relStart = Math.max(0, mix.length - Math.round(0.05 * SR));
-  for (let i = relStart; i < mix.length; i++) {
-    const k = (mix.length - i) / (mix.length - relStart);
-    mix[i] *= k;
+  let phase = 0;
+  for (let i = 0; i < n; i++) {
+    const f = f0 + (f1 - f0) * Math.pow(i / n, k);
+    phase += f / SR;
+    out[i] = shape === 'sine' ? Math.sin(2 * Math.PI * phase) : 2 * (phase % 1) - 1;
   }
-  return scale(mix, 0.55);
+  return out;
 }
 
-function pluck(freq, dur) {
-  const o = osc(freq, dur, 'saw');
-  const filtered = lowpass(o, 2600);
-  const env = envExpDecay(filtered, 0.16);
-  return scale(env, 0.32);
+function env(buf, fn) {
+  const out = new Float64Array(buf.length);
+  for (let i = 0; i < buf.length; i++) out[i] = buf[i] * fn(i / SR, i / buf.length);
+  return out;
+}
+const decay = (buf, tau) => env(buf, (t) => Math.exp(-t / tau));
+function mix(...parts) {
+  const n = Math.max(...parts.map(([b]) => b.length));
+  const out = new Float64Array(n);
+  for (const [b, g] of parts) for (let i = 0; i < b.length; i++) out[i] += b[i] * g;
+  return out;
 }
 
-function padChord(freqs, dur, cutoffStart, cutoffEnd) {
-  let mix = new Float64Array(Math.round(dur * SR));
+// ---------- voices ----------
+function kick(g = 1) {
+  const body = decay(sweep(0.3, 170, 46), 0.12);
+  const click = decay(highpass(noise(0.012), 3000), 0.005);
+  return mix([body, 0.95 * g], [click, 0.55 * g]);
+}
+function hat(open = false, g = 1) {
+  const n = lowpass(highpass(noise(open ? 0.25 : 0.05), 7500), 14000);
+  return decay(n, open ? 0.09 : 0.017).map((x) => x * (open ? 0.2 : 0.23) * g);
+}
+function clap(g = 1) {
+  // three quick noise bursts -> the classic smeared clap transient
+  const n = bandpass(noise(0.22), 900, 3400);
+  const e = env(n, (t) => {
+    const bursts = [0, 0.011, 0.022].reduce((a, o) => a + (t >= o ? Math.exp(-(t - o) / 0.006) : 0), 0);
+    return 0.5 * bursts + (t >= 0.022 ? Math.exp(-(t - 0.022) / 0.06) : 0);
+  });
+  return e.map((x) => x * 0.42 * g);
+}
+function snare(g = 1) {
+  const n = decay(bandpass(noise(0.18), 1200, 6000), 0.05);
+  const body = decay(osc(200, 0.18), 0.03);
+  return mix([n, 0.45 * g], [body, 0.25 * g]);
+}
+function sub(freq, dur) {
+  const o = mix([osc(freq, dur), 0.85], [osc(freq * 2, dur), 0.14]);
+  const rel = 0.06;
+  return env(o, (t) => Math.min(1, t / 0.008) * Math.min(1, (dur - t) / rel)).map((x) => x * 0.55);
+}
+function pluck(freq, dur = 0.24, g = 1) {
+  const o = mix([osc(freq, dur, 'saw', -4), 0.5], [osc(freq, dur, 'saw', 4), 0.5]);
+  const f = lowpassVar(o, (p) => 600 + 3200 * Math.exp(-p * 5));
+  return decay(f, 0.14).map((x) => x * 0.3 * g);
+}
+function pad(freqs, dur, fc0, fc1, g = 1) {
+  const parts = [];
   for (const f of freqs) {
-    const a = osc(f, dur, 'saw', -6);
-    const b = osc(f, dur, 'saw', 6);
-    mix = addArr(mix, addArr(a, b));
+    parts.push([osc(f, dur, 'saw', -7), 1], [osc(f, dur, 'saw', 7), 1], [osc(f / 2, dur, 'tri'), 0.5]);
   }
-  const n = mix.length;
-  const filtered = new Float64Array(n);
-  // time-varying lowpass sweep via chunked filtering
-  const chunks = 24;
-  const chunkLen = Math.ceil(n / chunks);
-  for (let c = 0; c < chunks; c++) {
-    const s = c * chunkLen;
-    const e = Math.min(n, s + chunkLen);
-    const cutoff = cutoffStart + ((cutoffEnd - cutoffStart) * c) / (chunks - 1);
-    const slice = mix.slice(s, e);
-    const f = lowpass(slice, cutoff);
-    for (let i = 0; i < f.length; i++) filtered[s + i] = f[i];
-  }
-  const env = envLinRamp(filtered, Math.round(0.35 * SR));
-  return scale(env, 0.06);
+  const m = lowpassVar(mix(...parts), (p) => fc0 + (fc1 - fc0) * p);
+  return env(m, (t) => Math.min(1, t / 0.3) * Math.min(1, (dur - t) / 0.25)).map((x) => x * 0.05 * g);
+}
+function riser(dur, f0, f1, g = 1) {
+  const n = lowpassVar(highpass(noise(dur), f0), (p) => f0 + (f1 - f0) * p * p);
+  const tone = sweep(dur, f0 / 2, f1 / 4, 'saw', 1.6);
+  return env(mix([n, 1], [lowpass(tone, 3000), 0.25]), (_, p) => Math.pow(p, 2.4)).map((x) => x * 0.55 * g);
+}
+function whoosh(dur = 0.42, g = 1) {
+  // filtered-noise swoosh that peaks right as the downbeat lands
+  const n = lowpassVar(highpass(noise(dur), 250), (p) => 400 + 7000 * Math.sin(Math.PI * Math.min(1, p * 1.1)));
+  return env(n, (_, p) => Math.pow(Math.sin(Math.PI * Math.pow(p, 1.6)), 2)).map((x) => x * 0.5 * g);
+}
+function impact(g = 1) {
+  const s = decay(sweep(1.1, 95, 30), 0.4);
+  const n = decay(bandpass(noise(0.4), 150, 7000), 0.1);
+  const c = decay(highpass(noise(0.01), 4000), 0.004);
+  return mix([s, 1 * g], [n, 0.7 * g], [c, 0.5 * g]);
+}
+function shimmer(dur, g = 1) {
+  return env(highpass(noise(dur), 6000), (t) => Math.min(1, t / 0.05) * Math.exp(-t / (dur * 0.5))).map((x) => x * 0.06 * g);
 }
 
-function riser(dur, f0, f1, ampCurve = 'exp') {
-  let n = bandpass(noiseBuf(dur), f0, f1);
-  const withTone = addArr(scale(n, 1.0), scale(sweepFreqOsc(dur, f0, f1, 'saw'), 0.4));
-  const N = withTone.length;
-  const out = new Float64Array(N);
-  for (let i = 0; i < N; i++) {
-    const x = i / N;
-    const a = ampCurve === 'exp' ? Math.pow(x, 2.2) : x;
-    out[i] = withTone[i] * a;
-  }
-  return scale(out, 0.5);
-}
+// ---------- harmony ----------
+const CHORD = {
+  Cm: [130.81, 155.56, 196.0],
+  Bb: [116.54, 146.83, 174.61],
+  Ab: [103.83, 130.81, 155.56],
+  C: [130.81, 164.81, 196.0],
+};
+const ROOT = { Cm: 65.41, Bb: 58.27, Ab: 51.91, C: 65.41 };
+// bar index -> chord. Minor verse, then a lift to C major for the call to action.
+const PROG = ['Cm', 'Cm', 'Cm', 'Bb', 'Ab', 'Bb', 'Cm', 'Bb', 'Ab', 'Bb', 'Ab', 'Bb', 'C', 'Ab', 'Bb', 'C'];
 
-function impactHit(gainMul = 1) {
-  const dur = 0.9;
-  const sub = sweepFreqOsc(dur, 90, 32, 'sine', 'exp');
-  const subEnv = envExpDecay(sub, 0.35);
-  const noise = bandpass(noiseBuf(0.35), 150, 6000);
-  const noiseEnv = envExpDecay(noise, 0.09);
-  const noisePadded = new Float64Array(subEnv.length);
-  for (let i = 0; i < noiseEnv.length; i++) noisePadded[i] = noiseEnv[i];
-  const click = highpass(noiseBuf(0.01), 4000);
-  const clickEnv = envExpDecay(click, 0.004);
-  const clickPadded = new Float64Array(subEnv.length);
-  for (let i = 0; i < clickEnv.length; i++) clickPadded[i] = clickEnv[i];
-  const out = addArr(addArr(scale(subEnv, 1.0), scale(noisePadded, 0.7)), scale(clickPadded, 0.5));
-  return scale(out, 1.0 * gainMul);
-}
+// ---------- arrangement (bar numbers are 0-based) ----------
+// 0      intro riser, pluck hits         | 1   IMPACT: hero photo
+// 2-3    half-time groove, logo reveal   | 4-7 portfolio: one photo per bar, whoosh into each
+// 8-9    pillars + arp                   | 10-11 regions, bar 11 builds (roll + riser)
+// 12     CLIMAX: call to action          | 12-14 CTA groove | 15 resolve + tail
 
-// ---- ducking (sidechain) ----
 const kickTimes = [];
+for (let b = 2; b <= 14; b++) {
+  const halfTime = b <= 3;
+  const breakdown = b === 11;
+  for (let q = 0; q < 4; q++) {
+    if (halfTime && q % 2 === 1) continue;
+    if (breakdown && q >= 2) continue;
+    kickTimes.push(bar(b) + beat(q));
+  }
+}
+kickTimes.push(bar(1), bar(15));
 
-function duckEnvAt(t) {
+function duck(t) {
   let d = 1;
   for (const kt of kickTimes) {
-    if (t >= kt) {
-      const dt = t - kt;
-      if (dt < 0.22) {
-        d = Math.min(d, 1 - 0.65 * Math.exp(-dt * 22));
-      }
-    }
+    const dt = t - kt;
+    if (dt >= 0 && dt < 0.25) d = Math.min(d, 1 - 0.7 * Math.exp(-dt * 20));
   }
   return d;
 }
-function applyDuck(buf, startTime) {
-  const out = new Float64Array(buf.length);
-  for (let i = 0; i < buf.length; i++) {
-    out[i] = buf[i] * duckEnvAt(startTime + i / SR);
-  }
-  return out;
+function addDucked(t0, buf, pan = 0, gain = 1) {
+  add(t0, env(buf, (t) => duck(t0 + t)), pan, gain);
 }
 
-// =========================================================
-// SCORE
-// =========================================================
+// intro
+add(0, riser(bar(1), 250, 6000), 0, 0.9);
+add(beat(0), pluck(392.0, 0.7), -0.25, 0.9);
+add(beat(2), pluck(466.16, 0.7), 0.25, 0.9);
+add(beat(3), pluck(523.25, 0.5), 0, 0.6);
 
-// Bar 1 (beats 0-3): tension riser + sparse pluck accents while logo particles swirl
-addMono(0.0, riser(beat(4), 300, 5200, 'exp'), 0, 0.9);
-addMono(beat(0), pluck(392.0, 0.6), -0.2, 0.7);
-addMono(beat(2), pluck(466.16, 0.6), 0.2, 0.7);
+// bar 1: impact + hold
+add(bar(1) - 0.02, impact(1.0));
+add(bar(1), sub(ROOT.Cm, bar(1)), 0, 0.9);
+add(bar(1), pad(CHORD.Cm, bar(1), 300, 1400), 0, 1);
+add(bar(1) + beat(2), impact(0.3), 0, 0.6);
 
-// Bar 2 downbeat (t = beat(4) = 1.875): BIG IMPACT — logo snaps into place
-kickTimes.push(beat(4));
-addMono(beat(4) - 0.02, impactHit(1.0), 0, 1.0);
-addMono(beat(4), subBass(65.41, beat(4)), 0, 0.9); // C2 hold
-addMono(beat(6), impactHit(0.35), 0, 0.6); // secondary settle bounce
-
-// Bar 3-4 (beats 8-15, t 3.75-7.5): groove kicks in, bass line, backbeat clap, kinetic type + screenshot fly-in
-const grooveStartBeat = 8;
-const grooveEndBeat = 32; // groove runs through end
-const bassNotesByBar = {
-  2: 65.41, // C2   bar3 (beats8-11)
-  3: 58.27, // Bb1  bar4 (beats12-15)
-  4: 51.91, // Ab1  bar5 (beats16-19)
-  5: 51.91, // Ab1  bar6 (beats20-23)
-  6: 58.27, // Bb1  bar7 (beats24-27)
-  7: 65.41, // C2   bar8 (beats28-31) resolves home
-};
-const padChordsByBar = {
-  2: [130.81, 155.56, 196.0], // Cm
-  3: [116.54, 146.83, 174.61], // Bb
-  4: [103.83, 130.81, 155.56], // Ab
-  5: [103.83, 130.81, 155.56], // Ab
-  6: [116.54, 146.83, 174.61], // Bb
-  7: [130.81, 164.81, 196.0], // C major resolve
-};
-
-for (let bar = 2; bar <= 7; bar++) {
-  const b0 = bar * 4;
-  // kick on beats 0 and 2 of the bar (four on floor feel with pocket)
-  for (const off of [0, 2]) {
-    const bt = beat(b0 + off);
-    kickTimes.push(bt);
-  }
-  // bass note held for the bar, sidechained against the kicks below
-  const bt0 = beat(b0);
-  addMono(bt0, applyDuck(subBass(bassNotesByBar[bar], beat(4)), bt0), 0, 1.0);
-  // pad chord swell across the bar, filter opening up as bars progress
-  const sweepStart = 500 + (bar - 2) * 250;
-  const sweepEnd = sweepStart + 900;
-  addMono(bt0, padChord(padChordsByBar[bar], beat(4) + 0.05, sweepStart, sweepEnd), 0, 1.0);
+// harmonic bed for bars 2-15
+for (let b = 2; b <= 15; b++) {
+  const c = PROG[b];
+  const dur = b === 15 ? bar(1) : bar(1) + 0.02;
+  const bright = b >= 12 ? 1.6 : 1;
+  addDucked(bar(b), sub(ROOT[c], b === 15 ? bar(1) * 0.9 : bar(1)), 0, 1);
+  addDucked(bar(b), pad(CHORD[c], dur, 500 * bright + (b % 4) * 150, 1500 * bright + (b % 4) * 200), 0, 1);
 }
 
-// place kick + hat + clap groove hits
-for (let bar = 2; bar <= 7; bar++) {
-  const b0 = bar * 4;
-  for (const off of [0, 2]) {
-    addMono(beat(b0 + off), kick(bar >= 6 ? 1.05 : 1.0), 0, 1.0);
-  }
-  // 8th-note closed hats, open hat accent on the 'and' of 4
+// drums
+for (const kt of kickTimes) add(kt, kick(kt >= bar(12) ? 1.08 : 1), 0, 1);
+for (let b = 2; b <= 14; b++) {
+  const breakdown = b === 11;
   for (let e = 0; e < 8; e++) {
-    const t = beat(b0) + e * (BEAT / 2);
-    const isOpen = e === 7 && bar % 2 === 1;
-    addMono(t, hat(isOpen), 0.15, 1.0);
+    if (breakdown && e >= 4) break;
+    const open = e === 7 && b % 2 === 1;
+    add(bar(b) + e * (BEAT / 2), hat(open), 0.18, 1);
   }
-  // backbeat clap on beats 1 and 3 of the bar (off === 1, 3)
-  if (bar >= 3) {
-    addMono(beat(b0 + 1), clap(), -0.1, 0.9);
-    addMono(beat(b0 + 3), clap(), -0.1, 0.9);
+  if (b >= 4 && !breakdown) {
+    add(bar(b) + beat(1), clap(), -0.12, 1);
+    add(bar(b) + beat(3), clap(), -0.12, 1);
   }
 }
 
-// Bar 5-7 (beats 16-27): 16th-note arpeggio pluck melody, icons/stat-counters pop per note
-const arpPatternsByBar = {
-  4: [103.83, 130.81, 155.56, 207.65], // Ab
-  5: [103.83, 130.81, 155.56, 207.65],
-  6: [116.54, 146.83, 174.61, 233.08], // Bb
-};
-for (let bar = 4; bar <= 6; bar++) {
-  const b0 = bar * 4;
-  const notes = arpPatternsByBar[bar];
+// portfolio transitions: whoosh arriving on each photo downbeat (bars 4-7) and on the services/CTA hits
+for (const b of [4, 5, 6, 7, 8, 10]) add(bar(b) - 0.38, whoosh(0.42), b % 2 ? 0.3 : -0.3, 0.9);
+
+// arpeggio: bars 8-10 and CTA bars 12-14
+for (const b of [8, 9, 10, 12, 13, 14]) {
+  const tones = CHORD[PROG[b]];
+  const pattern = [tones[0] * 2, tones[1] * 2, tones[2] * 2, tones[0] * 4];
   for (let s = 0; s < 16; s++) {
-    const t = beat(b0) + s * (BEAT / 4);
-    const f = notes[s % notes.length];
-    addMono(t, pluck(f * 2, 0.22), 0.25, 0.55);
+    add(bar(b) + s * (BEAT / 4), pluck(pattern[s % 4], 0.22, s % 4 === 0 ? 1 : 0.7), s % 2 ? 0.3 : -0.3, 0.55);
   }
 }
 
-// Bar 7->8 transition (t ~ 12.5-13.125): snare/hat roll + riser building to the climax
-for (let s = 0; s < 10; s++) {
-  const t = beat(27) + s * (BEAT / 5);
-  addMono(t, hat(false), 0.1, 0.9 + s * 0.03);
-}
-addMono(beat(27), riser(beat(1), 400, 9000, 'exp'), 0, 1.1);
-
-// Bar 8 downbeat (t = beat(28) = 13.125): CLIMAX HIT — final logo + URL lockup
-kickTimes.push(beat(28));
-addMono(beat(28) - 0.02, impactHit(1.15), 0, 1.0);
-addMono(beat(28), subBass(65.41, beat(4)), 0, 1.0);
-addMono(beat(28), padChord([130.81, 164.81, 196.0, 261.63], beat(4), 300, 3500), 0, 1.0);
-addMono(beat(28), scale(highpass(noiseBuf(beat(4)), 5000), 0.05), 0.3, 1.0); // air/shimmer tail
-
-// final tail hat taps for polish
-addMono(beat(30), hat(false), -0.2, 1.0);
-addMono(beat(31), hat(true), -0.2, 0.8);
-
-// =========================================================
-// MASTER BUS: soft-clip saturation + fade out tail + normalize
-// =========================================================
-function softClip(x) {
-  return Math.tanh(x * 1.15);
+// bar 11 build: snare roll accelerating into the climax + riser
+const rollHits = [];
+{
+  // beat 2 of bar 11 in 16ths, beat 3 in 32nds -> 12 hits accelerating into the drop
+  const start = bar(11) + beat(2);
+  for (let i = 0; i < 4; i++) rollHits.push(start + i * (BEAT / 4));
+  for (let i = 0; i < 8; i++) rollHits.push(start + BEAT + i * (BEAT / 8));
+  rollHits.forEach((ht, i) => add(ht, snare(0.45 + (i / rollHits.length) * 0.8), 0.05, 1));
+  add(bar(11), riser(bar(1), 400, 10000, 1.2), 0, 1);
 }
 
+// bar 12: CLIMAX — call to action lands
+add(bar(12) - 0.02, impact(1.15));
+add(bar(12), shimmer(bar(2)), 0.3, 1);
+
+// CTA button "pulse" accents: soft bell on beat 1 of each CTA bar
+for (const b of [12, 13, 14]) add(bar(b), pluck(1046.5, 0.5, 0.8), 0, 0.5);
+
+// bar 15: resolve
+add(bar(15) - 0.02, impact(0.55));
+add(bar(15), pad([...CHORD.C, 261.63], bar(1), 2500, 600, 1.2), 0, 1);
+add(bar(15), shimmer(bar(1)), -0.3, 1);
+add(bar(15) + beat(2), hat(true, 0.8), -0.2, 1);
+
+// ---------- master ----------
 let peak = 0;
-for (let i = 0; i < N; i++) {
-  peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
-}
-const norm = peak > 0 ? 0.85 / peak : 1;
-
-const fadeOutSamples = Math.round(0.35 * SR);
+for (let i = 0; i < N; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
+const norm = 0.9 / peak;
+const fade = Math.round(0.4 * SR);
 const outL = new Int16Array(N);
 const outR = new Int16Array(N);
 for (let i = 0; i < N; i++) {
-  let l = softClip(L[i] * norm);
-  let r = softClip(R[i] * norm);
-  if (i > N - fadeOutSamples) {
-    const k = (N - i) / fadeOutSamples;
-    l *= k;
-    r *= k;
-  }
-  outL[i] = Math.max(-32767, Math.min(32767, Math.round(l * 32767)));
-  outR[i] = Math.max(-32767, Math.min(32767, Math.round(r * 32767)));
+  const k = i > N - fade ? (N - i) / fade : 1;
+  outL[i] = Math.round(Math.tanh(L[i] * norm * 1.2) * k * 32767);
+  outR[i] = Math.round(Math.tanh(R[i] * norm * 1.2) * k * 32767);
 }
 
-// ---- WAV writer (44.1kHz, 16-bit, stereo) ----
-function writeWav(path, left, right) {
-  const numSamples = left.length;
-  const blockAlign = 4;
-  const dataSize = numSamples * blockAlign;
-  const buf = Buffer.alloc(44 + dataSize);
-  buf.write('RIFF', 0);
-  buf.writeUInt32LE(36 + dataSize, 4);
-  buf.write('WAVE', 8);
-  buf.write('fmt ', 12);
-  buf.writeUInt32LE(16, 16);
-  buf.writeUInt16LE(1, 20); // PCM
-  buf.writeUInt16LE(2, 22); // channels
-  buf.writeUInt32LE(SR, 24);
-  buf.writeUInt32LE(SR * blockAlign, 28);
-  buf.writeUInt16LE(blockAlign, 32);
-  buf.writeUInt16LE(16, 34);
-  buf.write('data', 36);
-  buf.writeUInt32LE(dataSize, 40);
-  let off = 44;
-  for (let i = 0; i < numSamples; i++) {
-    buf.writeInt16LE(left[i], off); off += 2;
-    buf.writeInt16LE(right[i], off); off += 2;
+function writeWav(file, left, right) {
+  const dataSize = left.length * 4;
+  const b = Buffer.alloc(44 + dataSize);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + dataSize, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(2, 22);
+  b.writeUInt32LE(SR, 24);
+  b.writeUInt32LE(SR * 4, 28);
+  b.writeUInt16LE(4, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(dataSize, 40);
+  for (let i = 0, o = 44; i < left.length; i++, o += 4) {
+    b.writeInt16LE(left[i], o);
+    b.writeInt16LE(right[i], o + 2);
   }
-  fs.writeFileSync(path, buf);
+  fs.writeFileSync(file, b);
 }
 
-writeWav('/home/user/motiongraphics/public/audio/score.wav', outL, outR);
+const root = path.join(__dirname, '..');
+writeWav(path.join(root, 'public/audio/score.wav'), outL, outR);
 
-// Emit the beat map so the Remotion timeline can reference exact timestamps.
+const r = (x) => +x.toFixed(5);
 const beatMap = {
   bpm: BPM,
   beatSec: BEAT,
+  barSec: 4 * BEAT,
   duration: DURATION,
-  beats: Object.fromEntries(Array.from({ length: 33 }, (_, i) => [i, +beat(i).toFixed(5)])),
   cues: {
-    riserStart: 0,
-    logoImpact: +beat(4).toFixed(5),
-    logoSettle: +beat(6).toFixed(5),
-    grooveStart: +beat(8).toFixed(5),
-    titleStart: +beat(8).toFixed(5),
-    screenshotStart: +beat(12).toFixed(5),
-    arpStart: +beat(16).toFixed(5),
-    statsStart: +beat(20).toFixed(5),
-    buildupStart: +beat(27).toFixed(5),
-    climaxHit: +beat(28).toFixed(5),
-    end: DURATION,
+    intro: 0,
+    heroImpact: r(bar(1)),
+    heroSettle: r(bar(1) + beat(2)),
+    logo: r(bar(2)),
+    portfolio: [4, 5, 6, 7].map((b) => r(bar(b))),
+    pillars: r(bar(8)),
+    regions: r(bar(10)),
+    buildup: r(bar(11) + beat(2)),
+    cta: r(bar(12)),
+    ctaPulses: [12, 13, 14].map((b) => r(bar(b))),
+    resolve: r(bar(15)),
+    end: r(DURATION),
   },
+  kicks: kickTimes.sort((a, b) => a - b).map(r),
+  roll: rollHits.map(r),
 };
-fs.writeFileSync('/home/user/motiongraphics/scripts/beatmap.json', JSON.stringify(beatMap, null, 2));
-console.log('Wrote score.wav', (N / SR).toFixed(3), 's');
-console.log(beatMap.cues);
+fs.writeFileSync(path.join(root, 'src/beatmap.json'), JSON.stringify(beatMap, null, 2));
+console.log(`score.wav ${DURATION.toFixed(3)}s`, beatMap.cues);
