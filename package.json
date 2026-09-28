@@ -5,7 +5,9 @@
   "scripts": {
     "start": "remotion studio src/index.ts",
     "music": "node scripts/generate-music.js",
-    "build": "remotion render src/index.ts EdenDesignAd out/eden-design-ad.mp4"
+    "build": "npm run music && npm run render && npm run mux",
+    "render": "remotion render src/index.ts EdenDesignAd out/_video.mp4",
+    "mux": "ffmpeg -y -i out/_video.mp4 -i public/audio/score.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -movflags +faststart -shortest out/eden-design-ad-30s.mp4"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.529",

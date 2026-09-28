@@ -75,7 +75,7 @@ export const DiagonalReveal: React.FC<RevealProps> = (p) => {
     <AbsoluteFill>
       <AbsoluteFill
         style={{
-          clipPath: 'polygon(0 0, 100% 0, 0 100%)',
+          clipPath: 'polygon(0 0, 101% 0, 0 101%)',
           transform: `translate(${(1 - a) * -60}%, ${(1 - a) * -60}%)`,
         }}
       >
@@ -83,7 +83,7 @@ export const DiagonalReveal: React.FC<RevealProps> = (p) => {
       </AbsoluteFill>
       <AbsoluteFill
         style={{
-          clipPath: 'polygon(100% 0, 100% 100%, 0 100%)',
+          clipPath: 'polygon(100% -1%, 100% 100%, -1% 100%)',
           transform: `translate(${(1 - b) * 60}%, ${(1 - b) * 60}%)`,
         }}
       >
